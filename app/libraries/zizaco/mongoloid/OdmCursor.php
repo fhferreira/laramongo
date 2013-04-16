@@ -104,6 +104,7 @@ class OdmCursor implements \Iterator
 
         if( $model->parseDocument( $document ) )
         {
+            $model = $model->polymorph( $model );
             return $model;
         }
         else
@@ -117,17 +118,35 @@ class OdmCursor implements \Iterator
      *
      * @return array
      */
-    public function toArray()
+    public function toArray( $documentsToArray = true, $limit = 20 )
     {
         $result = array();
 
-        $this->limit(20);
+        $this->limit( $limit );
         foreach($this as $document)
         {
-            $result[] = $document->getAttributes();
+            if( $documentsToArray )
+            {
+                $result[] = $document->getAttributes();
+            }
+            else
+            {
+                $result[] = $document;
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * Returns the first element of the cursor
+     *
+     * @return mixed
+     */
+    public function first()
+    {
+        $this->rewind();
+        return $this->current();
     }
 
     /**
@@ -155,6 +174,16 @@ class OdmCursor implements \Iterator
         return $this->cursor->valid();
     }
 
+    function sort( $fields )
+    {
+        if($this->count() > 1)
+        {
+            $this->cursor->sort( $fields );
+        }
+        
+        return $this;
+    }
+
     /**
      * Conver the cursor to its string representation.
      *
@@ -168,6 +197,25 @@ class OdmCursor implements \Iterator
         foreach($this as $document)
         {
             $result .= (string)$document;
+        }
+
+        $result = '['.$result.']';
+
+        return $result;
+    }
+
+    /**
+     * Conver the cursor to its string representation.
+     *
+     * @return string
+     */
+    public function toJson($options = 0)
+    {
+        $result = '';
+
+        foreach($this as $document)
+        {
+            $result .= $document->toJson($options);
         }
 
         $result = '['.$result.']';

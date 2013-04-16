@@ -5,8 +5,6 @@
         $f = array_merge( Input::old() );
 ?>
 
-{{-- Since multiple line brackets are not yet implemented --}}
-{{-- see: https://github.com/laravel/framework/issues/88  --}}
 {{
     Form::open([   
         'url' => URL::action(
@@ -19,7 +17,7 @@
     ])
 }}
     @if ( isset($category) )
-        {{ HTML::image($category->imageUrl()) }}
+        {{ Html::image($category->imageUrl()) }}
 
         <hr>
     @endif
@@ -34,11 +32,11 @@
     <div class="control-group">
         <span class='control-label'>Tipo</span>
         <div class="controls">
-            <label for='kind' class='radio'>
+            <label for='radio-kind-blank' class='radio'>
                 Categoria
                 {{ Form::radio('kind', '', true, ['id'=>'radio-kind-blank']) }}
             </label>
-            <label for='kind' class='radio'>
+            <label for='radio-kind-leaf' class='radio'>
                 Chave de entrada
                 {{ Form::radio('kind', 'leaf', array_get( $f,'kind') == 'leaf', ['id'=>'radio-kind-leaf']) }}
             </label>
@@ -59,7 +57,16 @@
         </div>
     </div>
 
-    {{ Form::hidden('active', array_get( $f,'active') ) }}
+    <div class="control-group">
+        <span class='control-label'>Opções</span>
+        <div class="controls">
+            <label for='checkbox-hidden' class='checkbox'>
+                Invisível
+                {{ Form::hidden('hidden', false ) }}
+                {{ Form::checkbox('hidden', 'true', array_get( $f,'hidden'), ['id'=>'checkbox-hidden']) }}
+            </label>
+        </div>
+    </div>
 
     @if ( Session::get('error') )
         <div class="alert alert-error">
@@ -75,9 +82,9 @@
         {{ Form::button('Salvar categoria', ['type'=>'submit', 'class'=>'btn btn-primary', 'id'=>'submit-form'] ) }}
 
         @if ( isset($category) )
-            {{ HTML::action( 'Admin\CategoriesController@destroy', 'Excluir', ['id'=>$category->_id], ['data-method'=>'delete', 'class'=>'btn btn-danger'] ) }}
+            {{ Html::linkAction( 'Admin\CategoriesController@destroy', 'Excluir', ['id'=>$category->_id], ['data-method'=>'delete', 'class'=>'btn btn-danger'] ) }}
         @endif
 
-        {{ HTML::action( 'Admin\CategoriesController@index', 'Cancelar', [], ['class'=>'btn'] ) }}
+        {{ Html::linkAction( 'Admin\CategoriesController@index', 'Cancelar', [], ['class'=>'btn'] ) }}
     </div>
 {{ Form::close() }}

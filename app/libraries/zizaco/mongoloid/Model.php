@@ -1,6 +1,7 @@
 <?php namespace Zizaco\Mongoloid;
 
 use MongoClient;
+use Cache;
 
 class Model
 {
@@ -10,6 +11,13 @@ class Model
      * @var MongoDB
      */
     protected $connection;
+
+    /**
+     * The connection name for the model.
+     *
+     * @var MongoDB
+     */
+    public static $shared_connection;
 
     /**
      * The collection associated with the model.
@@ -54,6 +62,14 @@ class Model
      * @var array
      */
     public $fillable = array();
+
+    /**
+     * The attributes that aren't mass assignable. The oposite
+     * to the fillable array;
+     *
+     * @var array
+     */
+    protected $guarded = array();
 
     /**
      * Save the model to the database.
@@ -130,6 +146,7 @@ class Model
         // If the response is correctly parsed return it
         if( $instance->parseDocument( $document ) )
         {
+            $instance = $instance->polymorph( $instance );
             return $instance;
         }
         else
@@ -167,7 +184,7 @@ class Model
      * @param  array  $fields
      * @return Zizaco\LmongoOdm\OdmCursor
      */
-    public static function where($query = array(), $fields = array())
+    public static function where($query = array(), $fields = array(), $cachable = false)
     {      
         $instance = new static;
 
@@ -181,11 +198,22 @@ class Model
         if(! empty($fields))
             $fields = $instance->prepareProjection($fields);
 
-        // Perfodm Mongo's find and returns iterable cursor
-        $cursor =  new OdmCursor(
-            $instance->collection()->find( $query, $fields ),
-            get_class($instance)
-        );
+        if($cachable)
+        {
+            // Perfodm Mongo's find and returns iterable cursor
+            $cursor =  new CachableOdmCursor(
+                $query,
+                get_class($instance)
+            );
+        }
+        else
+        {
+            // Perfodm Mongo's find and returns iterable cursor
+            $cursor =  new OdmCursor(
+                $instance->collection()->find( $query, $fields ),
+                get_class($instance)
+            );
+        }
 
         return $cursor;
     }
@@ -306,9 +334,10 @@ class Model
      */
     protected function db()
     {
-        if( $this->connection == null )
+        if(! $this->connection )
         {
-            $this->connection = new MongoClient();
+            $connector = new MongoDbConnector;
+            $this->connection = $connector->getConnection();
         }
 
         return $this->connection->{$this->database};
@@ -389,7 +418,7 @@ class Model
     public function fill( $input )
     {
         foreach ($input as $key => $value) {
-            if( empty($this->fillable) or in_array($key,$this->fillable) )
+            if( (empty($this->fillable) or in_array($key,$this->fillable)) && ! in_array($key,$this->guarded) )
             {
                 $this->setAttribute( $key, $value );
             }                
@@ -432,15 +461,31 @@ class Model
     /**
      * Returns the referenced documents as objects
      */
-    protected function referencesOne($model, $field)
+    protected function referencesOne($model, $field, $cachable = true)
     {
-        return $model::first(array('_id'=>$this->$field));
+        if($cachable)
+        {
+            $instance = $this;
+
+            $cache_key = 'reference_cache_'.$model.'_'.$this->$field;
+
+            // For the next 30 seconds (0.5 minutes), the last retrived value (for that Collection and ID)
+            // will be returned from cache =)
+            return Cache::remember($cache_key, 0.5, function() use ($model, $field, $instance)
+            {
+                return $model::first(array('_id'=>$instance->$field));
+            });
+        }
+        else
+        {
+            return $model::first(array('_id'=>$this->$field));
+        }
     }
 
     /**
      * Returns the cursor for the referenced documents as objects
      */
-    protected function referencesMany($model, $field)
+    protected function referencesMany($model, $field, $cachable = true)
     {
         $ref_ids = $this->$field;
 
@@ -454,7 +499,21 @@ class Model
             }
         }
 
-        return $model::where(array('_id'=>array('$in'=>$ref_ids)));
+        if($cachable)
+        {
+            $cache_key = 'reference_cache_'.$model.'_'.md5(serialize($ref_ids));
+
+            // For the next 6 seconds (0.1 minute), the last retrived value
+            // will be returned from cache =)
+            return Cache::remember($cache_key, 0.1, function() use ($model, $ref_ids)
+            {
+                return $model::where(array('_id'=>array('$in'=>$ref_ids)), [], true);
+            });
+        }
+        else
+        {
+            return $model::where(array('_id'=>array('$in'=>$ref_ids)));
+        }
     }
 
     /**
@@ -469,6 +528,7 @@ class Model
             foreach ($this->$field as $document) {
                 $instance = new $model;
                 $instance->parseDocument( $document );
+                $instance = $this->polymorph( $instance );                
                 $documents[] = $instance;
             }
         }
@@ -630,6 +690,40 @@ class Model
 
         // Update attribute
         $this->setAttribute($field, array_values($documents));
+    }
+
+    /**
+     * The polymorphic method is something that may be overwritten
+     * in order to make a model polimorphic. For example: You may have three
+     * models with the same collection: Content, ArticleContent and VideoContent.
+     * By overwriting the polymorph method is possible to make the Content
+     * to become a ArticleContent or a VideoContent object by simply
+     * selecting it from the database using first, find, where or all.
+     *
+     * Example:
+     *  public function polymorph( $instance )
+     *  {
+     *      if ($this->video != null)
+     *      {
+     *          $obj = new VideoContent;
+     *          $obj->parseDocument( $instance->attributes );
+     *
+     *          return $obj;
+     *      }
+     *      else
+     *      {
+     *          return $instance;
+     *      }
+     *  }
+     * 
+     * In the example above, if you call Content::first() and the content
+     * returned have the key video set, then the object returned will be
+     * a VideoContent instead of a Content.
+     *
+     */
+    public function polymorph( $instance )
+    {
+        return $instance;
     }
 
     /**
